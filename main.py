@@ -42,6 +42,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_seq_len", type=int, default=512, help="Max sequence length for CUDA graph")
     parser.add_argument("--num_hidden_layers", type=int, default=40, help="Max batch size for CUDA graph")
     parser.add_argument("--use_cache", action="store_true", help="Use KVCache", default=False)
+    parser.add_argument("--permute_in_graph", action="store_true", help="permute expert inputs in the graph", default=False)
     args = parser.parse_args()
 
     with open("minicpm/config.json", "r") as f:
@@ -52,28 +53,22 @@ if __name__ == "__main__":
         setattr(minicpm_config, key, value)
 
     minicpm = MiniCPMModel(minicpm_config)  # random parameters
-    os.makedirs(args.model_path, exist_ok=True)
-    minicpm_config.save_pretrained("models/minicpm")
-    minicpm.save_pretrained("models/minicpm")
+    # os.makedirs(args.model_path, exist_ok=True)
+    # minicpm_config.save_pretrained("models/minicpm")
+    # minicpm.save_pretrained("models/minicpm")
 
     minicpm.to(device="cuda", dtype=torch.float16).eval()
     
-    try:
-        with open(os.path.join(args.model_path, "sequence_list.pt"), "rb") as f:
-            sequence_list = pickle.load(f)
-    except:
-        seed_all(0)
-        sequence_list = []
-        for seq_len in range(4, args.max_seq_len + 1, 4):
-            sequence = torch.randint(10, minicpm_config.vocab_size - 10, (1, seq_len))
-            sequence_list.append(sequence)
-        with open(os.path.join(args.model_path, "sequence_list.pt"), "wb") as f:
-            pickle.dump(sequence_list, f)
 
     seed_all(0)
+    sequence_list = []
+    for i in range(100):
+        sequence_list.append(torch.randint(10, minicpm_config.vocab_size - 10, (1, args.max_seq_len), device="cuda", dtype=torch.int64))
+
     with torch.no_grad():
         seq = sequence_list[-1].to(device="cuda", dtype=torch.int64)
-        outputs = minicpm(input_ids=seq, attention_mask=None, return_dict=True)
+        minicpm(input_ids=seq, attention_mask=None, return_dict=True)
+        # outputs = minicpm(input_ids=seq, attention_mask=None, return_dict=True)
     
     latencies = defaultdict(list)
     for idx, seq in enumerate(sequence_list):
